@@ -40,13 +40,13 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, isDark }) 
             </code>
           );
         },
-        p({ children }) {
+        p({ children }: any) {
           return <p className="mb-4 last:mb-0 leading-relaxed">{children}</p>;
         },
-        ul({ children }) {
+        ul({ children }: any) {
           return <ul className="list-disc pl-5 mb-4 space-y-1">{children}</ul>;
         },
-        ol({ children }) {
+        ol({ children }: any) {
           return <ol className="list-decimal pl-5 mb-4 space-y-1">{children}</ol>;
         }
       }}
