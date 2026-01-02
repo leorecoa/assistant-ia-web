@@ -1,0 +1,8 @@
+{
+  "name": "AI Assistente Geral",
+  "description": "Um assistente inteligente multifuncional para responder perguntas, ajudar em estudos, apoiar programação e gerar ideias usando a tecnologia Gemini.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
