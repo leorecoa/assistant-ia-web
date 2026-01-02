@@ -1,52 +1,70 @@
 
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { Message } from "../types";
+import { Message, GroundingSource } from "../types";
 
 export class GeminiService {
-  private ai: GoogleGenAI;
-  private modelName: string = 'gemini-3-flash-preview';
-
-  constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  private getAI() {
+    return new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
   }
+  
+  private modelName: string = 'gemini-3-pro-preview';
 
-  async sendMessage(
+  async *sendMessageStream(
     message: string, 
     history: Message[], 
     isTechnicalMode: boolean
-  ): Promise<string> {
+  ): AsyncGenerator<{ text: string; sources?: GroundingSource[] }> {
+    const ai = this.getAI();
+    
+    const systemInstruction = isTechnicalMode
+      ? "Você é um assistente técnico especialista. Forneça respostas detalhadas e focadas em arquitetura e código limpo. Use o Google Search para verificar documentações recentes se necessário."
+      : "Você é um assistente multifuncional amigável. Ajude com estudos, ideias e textos. Use o Google Search para fatos atuais.";
+
+    const contents = [
+      ...history.map(m => ({
+        role: m.role === 'user' ? 'user' as const : 'model' as const,
+        parts: [{ text: m.content }]
+      })),
+      { role: 'user' as const, parts: [{ text: message }] }
+    ];
+
     try {
-      const systemInstruction = isTechnicalMode
-        ? "Você é um assistente técnico especialista. Forneça respostas detalhadas, precisas e focadas em arquitetura, eficiência e boas práticas. Quando solicitado código, escreva código otimizado e documentado. Explique erros de forma estruturada (causa, diagnóstico, solução)."
-        : "Você é um assistente útil e amigável. Ajude com perguntas gerais, estudos, resumos e geração de ideias. Seja claro e conciso.";
-
-      const contents = [
-        ...history.map(m => ({
-          role: m.role === 'user' ? 'user' as const : 'model' as const,
-          parts: [{ text: m.content }]
-        })),
-        { role: 'user' as const, parts: [{ text: message }] }
-      ];
-
-      const response: GenerateContentResponse = await this.ai.models.generateContent({
+      const result = await ai.models.generateContentStream({
         model: this.modelName,
         contents: contents,
         config: {
           systemInstruction: systemInstruction,
-          temperature: isTechnicalMode ? 0.3 : 0.7,
+          tools: [{ googleSearch: {} }],
+          temperature: isTechnicalMode ? 0.2 : 0.7,
         }
       });
 
-      const text = response.text;
-      if (!text) throw new Error("A IA retornou uma resposta vazia.");
-      
-      return text;
-    } catch (error: any) {
-      console.error("Gemini API Error:", error);
-      if (error.message?.includes("API key not valid")) {
-        throw new Error("Chave de API inválida. Por favor, verifique as configurações.");
+      let fullText = "";
+      let sources: GroundingSource[] = [];
+
+      for await (const chunk of result) {
+        const textChunk = chunk.text;
+        if (textChunk) {
+          fullText += textChunk;
+          
+          // Tentar extrair metadados de grounding se disponíveis no chunk
+          const chunks = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks;
+          if (chunks) {
+            chunks.forEach((c: any) => {
+              if (c.web?.uri && c.web?.title) {
+                if (!sources.find(s => s.uri === c.web.uri)) {
+                  sources.push({ title: c.web.title, uri: c.web.uri });
+                }
+              }
+            });
+          }
+          
+          yield { text: fullText, sources: sources.length > 0 ? sources : undefined };
+        }
       }
-      throw new Error(error.message || "Ocorreu um erro ao processar sua solicitação.");
+    } catch (error: any) {
+      console.error("Gemini Stream Error:", error);
+      throw new Error(error.message || "Erro na comunicação com a IA.");
     }
   }
 }
